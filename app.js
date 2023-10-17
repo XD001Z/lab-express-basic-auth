@@ -1,35 +1,68 @@
-// ℹ️ Gets access to environment variables/settings
-// https://www.npmjs.com/package/dotenv
-require('dotenv/config');
+var createError = require('http-errors');
+var express = require('express');
+var path = require('path');
+var cookieParser = require('cookie-parser');
+var logger = require('morgan');
+var mongoose = require('mongoose');
+var session = require('express-session');
+var MongoStore = require('connect-mongo');
+var indexRouter = require('./routes/index');
+var usersRouter = require('./routes/users');
+var authRouter = require('./routes/auth');
+var mainRouter = require('./routes/main');
+var app = express();
 
-// ℹ️ Connects to the database
-require('./db');
+app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'hbs');
+app.set('trust proxy', 1);
+app.enable('trust proxy');
+app.use(
+  session({
+    secret: process.env.SECRET,
+    resave: true,
+    saveUninitialized: false,
+    cookie: {
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 60000
+    },
+    store: MongoStore.create({
+      mongoUrl: process.env.MONGODB_URI 
+    })
+  })
+);
+app.use(logger('dev'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/', indexRouter);
+app.use('/users', usersRouter);
+app.use('/auth', authRouter);
+app.use('/main', mainRouter);
 
-// Handles http requests (express is node js framework)
-// https://www.npmjs.com/package/express
-const express = require('express');
+///////////// Catch 404 and forward to handler /////////////
+app.use(function(req, res, next) {
+  next(createError(404));
+});
 
-// Handles the handlebars
-// https://www.npmjs.com/package/hbs
-const hbs = require('hbs');
+/////////////////////// Error handler ///////////////////////
+app.use(function(err, req, res, next) {
+  res.locals.message = err.message;
+  res.locals.error = req.app.get('env') === 'development' ? err : {};
+  res.status(err.status || 500);
+  res.render('error');
+});
 
-const app = express();
-
-// ℹ️ This function is getting exported from the config folder. It runs most middlewares
-require('./config')(app);
-
-// default value for title local
-const projectName = 'lab-express-basic-auth';
-const capitalized = string => string[0].toUpperCase() + string.slice(1).toLowerCase();
-
-app.locals.title = `${capitalized(projectName)}- Generated with Ironlauncher`;
-
-// 👇 Start handling routes here
-const index = require('./routes/index');
-app.use('/', index);
-
-// ❗ To handle errors. Routes that don't exist or errors that you handle in specific routes
-require('./error-handling')(app);
+///////////////////// MongoDB connection /////////////////////
+mongoose
+  .connect(process.env.MONGODB_URI)
+  .then((x) => {
+    console.log(`Connected to Mongo! Database name: "${x.connections[0].name}"`);
+  })
+  .catch((err) => {
+    console.error("Error connecting to Mongo: ", err);
+  });
 
 module.exports = app;
-
